@@ -1,0 +1,925 @@
+{
+  "name": "Entrega_final_ana_duran_vs1",
+  "nodes": [
+    {
+      "parameters": {
+        "jsCode": "// ============ FILTRO ANTI-BUCLE ============\n// 1) Descarta mails enviados por la propia automatizacion (asunto con [AUTO] o remitente propio)\n// 2) Valida remitente y asunto (comparacion string vs string, en minusculas)\n// 3) Deduplica por messageId usando staticData (evita reprocesar el mismo mail)\nconst j = $input.first().json;\n\n// ID - tu input viene con guion 'message-id'\nconst messageId = String(j['message-id'] || j.messageId || j.id || '');\n\n// Subject\nconst subject = String(j.subject || j.Subject || '');\nconst subjectLower = subject.toLowerCase();\n\n// Body - ya con el mensaje agrandado\nconst body = String(j.text || j.textPlain || j.html || j.body || j.snippet || '').trim();\n\n// From - ahora es objeto, no texto\nlet fromMail = '';\nlet fromName = 'Ana Duran';\nif (j.from && typeof j.from === 'object') {\n  fromMail = j.from.value?.[0]?.address || j.from.address || '';\n  fromName = j.from.text || j.from.name || fromName;\n} else {\n  fromMail = String(j.from || '');\n}\n\n// Filtros anti-bucle\nif (!messageId) { return []; }\nif (body.length < 5) { return []; }\nif (subjectLower.includes('auto') || subjectLower.includes('out of office')) { return []; }\n\nreturn [{\n  json: {\n    messageId: messageId,\n    threadId: j.threadId || '',\n    subject: subject,\n    fromMail: fromMail || 'anaduran78@gmail.com',\n    fromName: fromName,\n    body: body,\n    recibidoEn: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "f448b5f4-bc3d-49ad-a0bf-60f47565aa52",
+      "name": "Filtro Anti-Bucle",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1552,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "getAll",
+        "databaseId": {
+          "__rl": true,
+          "value": "3de99f42-0582-80f2-ba3e-ccf944b9d273",
+          "mode": "list",
+          "cachedResultName": "3de99f42-0582-80f2-ba3e-ccf944b9d273",
+          "cachedResultUrl": "https://app.notion.com/p/3de99f42058280f2ba3eccf944b9d273"
+        },
+        "returnAll": true,
+        "filterType": "manual",
+        "options": {}
+      },
+      "id": "b8ac4b47-027b-4074-a74d-f367fef78dc6",
+      "name": "Leer Lista de Articulos (Notion)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        -1328,
+        192
+      ],
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============ PREPARAR CATALOGO ============\n// Normaliza la lista de articulos de Notion y fuerza NUMERO en 'unidades por caja'.\n\nfunction pick(obj, keys) {\n  for (const k of keys) {\n    if (obj[k]!== undefined && obj[k]!== null && String(obj[k]).trim()!== '') return obj[k];\n  }\n  return '';\n}\nfunction aNumero(v) {\n  const m = String(v).match(/\\d+/);\n  return m ? parseInt(m[0], 10) : 0;\n}\n\nconst catalogo = [];\nfor (const item of $('Leer Lista de Articulos (Notion)').all()) {\n  const j = item.json;\n  const nombreRaw = pick(j, ['property_art_culo', 'art_culo', 'title', 'name']);\n  const cajaRaw = pick(j, ['property_cantidad_', 'property_cantidad', 'property_', 'cantidad']);\n  const nombre = String(nombreRaw ?? '').trim();\n  if (!nombre) continue;\n  catalogo.push({\n    articulo: nombre,\n    unidadesPorCaja: aNumero(cajaRaw)\n  });\n}\n\n// ESTO ES LO QUE LE FALTABA A TU IA\nconst catalogoTexto = catalogo\n  .map(c => `- ${c.articulo}: ${c.unidadesPorCaja} unidades por caja`)\n  .join('\\n');\n\nconst pedidoItem = $('Filtro Anti-Bucle').first()?.json || $('Trigger: Leo Mails con Pedidos').first()?.json;\n\nreturn [{\n  json: {\n    pedido: pedidoItem,\n    catalogo: catalogo,\n    catalogoTexto: catalogoTexto, // ahora Tomo Decision sí lo encuentra\n    totalEnCatalogo: catalogo.length\n  }\n}];"
+      },
+      "id": "740df9d3-fea5-480e-abd2-049ee42d092c",
+      "name": "Preparar Catalogo",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1104,
+        192
+      ]
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"cliente\": { \"type\": \"string\", \"description\": \"Nombre del cliente detectado en el mail o el mail si no hay nombre\" },\n    \"mail\": { \"type\": \"string\", \"description\": \"Mail del cliente\" },\n    \"tipo_compra\": { \"type\": \"string\", \"enum\": [\"mayorista\", \"minorista\", \"analisis\"] },\n    \"total_articulos\": { \"type\": \"number\", \"description\": \"Suma total de unidades pedidas\" },\n    \"descripcion_compra\": { \"type\": \"string\", \"description\": \"Detalle legible del pedido: articulo, cantidad, cajas\" },\n    \"motivo\": { \"type\": \"string\", \"description\": \"Regla aplicada para la decision\" },\n    \"items\": {\n      \"type\": \"array\",\n      \"items\": {\n        \"type\": \"object\",\n        \"properties\": {\n          \"articulo\": { \"type\": \"string\" },\n          \"cantidad_solicitada\": { \"type\": \"number\" },\n          \"unidades_por_caja\": { \"type\": \"number\" },\n          \"cajas_completas\": { \"type\": \"boolean\" },\n          \"encontrado_en_catalogo\": { \"type\": \"boolean\" }\n        },\n        \"required\": [\"articulo\", \"cantidad_solicitada\", \"unidades_por_caja\", \"cajas_completas\", \"encontrado_en_catalogo\"]\n      }\n    }\n  },\n  \"required\": [\"cliente\", \"mail\", \"tipo_compra\", \"total_articulos\", \"descripcion_compra\", \"motivo\", \"items\"]\n}"
+      },
+      "id": "8dea0290-8199-4415-9a09-5af0d343cedc",
+      "name": "Formato de Salida",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        448
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============ NORMALIZAR DECISION ============\n// Convierte todo a tipos correctos (numero / boolean / string) y\n// revalida las reglas de negocio de forma deterministica.\n\nconst norm = (s) => String(s ?? '')\n  .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n  .toLowerCase().trim();\n\nconst aNumero = (v) => {\n  const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(',', '.'));\n  return Number.isFinite(n) ? n : 0;\n};\n\nconst raw = $input.first().json;\nconst d = raw.output ?? raw;\n\nconst pedido = $('Preparar Catalogo').first().json.pedido;\nconst catalogoCompleto = $('Preparar Catalogo').first().json.catalogoCompleto === true;\n\nconst items = Array.isArray(d.items) ? d.items.map((it) => ({\n  articulo: String(it.articulo ?? '').trim(),\n  cantidadSolicitada: aNumero(it.cantidad_solicitada),\n    encontrado: it.encontrado_en_catalogo === true\n})) : [];\n\nlet total = aNumero(d.total_articulos);\nif (total <= 0 && items.length) {\n  total = items.reduce((acc, it) => acc + it.cantidadSolicitada, 0);\n}\n\n\n// --- Revalidacion deterministica (numero vs numero, boolean vs boolean) ---\nconst hayEspecial = items.some((it) => norm(it.articulo).includes('articulo especial'));\n\nlet tipoRaw = String($input.first().json.output.tipo_compra ?? 'minorista').trim().toLowerCase();\nlet tipo = tipoRaw.charAt(0).toUpperCase() + tipoRaw.slice(1);\n\nconst descripcion = String(d.descripcion_compra ?? '').trim()\n  || items.map((it) => `${it.articulo}: ${it.cantidadSolicitada} u `).join(' | ')\n  || 'Sin detalle';\n\nreturn [{\n  json: {\n    cliente: String(d.cliente ?? pedido.from ?? '').trim() || pedido.from,\n    mail: String(d.mail ?? pedido.from ?? '').trim() || pedido.from,\n    tipoCompra: tipo,\n    totalArticulos: total,\n    descripcionCompra: descripcion,\n    motivo: String(d.motivo ?? '').trim(),\n    items,\n    messageId: pedido.messageId,\n    threadId: pedido.threadId,\n    asunto: pedido.subject,\n    actualizadoEn: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "eb99855f-8503-43c7-8e5a-44f934895292",
+      "name": "Normalizar Decision",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -544,
+        48
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-mayorista",
+                    "leftValue": "={{ $('Normalizar Decision').item.json.tipoCompra }}",
+                    "rightValue": "Mayorista",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Mayorista"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "cond-minorista",
+                    "leftValue": "={{ $('Normalizar Decision').item.json.tipoCompra }}",
+                    "rightValue": "Minorista",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "Minorista"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "Analisis"
+        }
+      },
+      "id": "2c9f259c-3c66-4a91-9d26-7ccc8716505e",
+      "name": "Enrutar Tipo de Compra",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -96,
+        64
+      ],
+      "retryOnFail": true
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4310430f-3686-4cad-bc6d-29f0825e9406",
+              "name": "canalSlack",
+              "value": "mayorista",
+              "type": "string"
+            },
+            {
+              "id": "9ac616e5-ee39-463c-aa3b-bd615454438d",
+              "name": "estadoPendiente",
+              "value": "Mayorista",
+              "type": "string"
+            },
+            {
+              "id": "8b07ce4f-3563-4529-9d16-6d077de8dea5",
+              "name": "estadoAprbado",
+              "value": "Aprobado Mayorista",
+              "type": "string"
+            },
+            {
+              "id": "7a0bfa13-7325-4d3e-9732-9b11d88085d2",
+              "name": "name:pageid",
+              "value": "=  {{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "6becff02-deac-4ba2-af6b-97cc5351170b",
+      "name": "Config Mayorista",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        160,
+        -48
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Guardo información de la compra').first().json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Estado|status",
+              "statusValue": "Pendiente de Aprobación Slack"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "98dc2305-6da9-4131-badf-e398fedd86cd",
+      "name": "Notion: Estado Pendiente Aprobacion",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        608,
+        80
+      ],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "cond-aprobado",
+              "leftValue": "={{ $json.data.approved }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f15bb8e3-8be7-4eca-88ec-bf1a398b71f4",
+      "name": "Aprobado en Slack?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1040,
+        96
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Guardo información de la compra').first().json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Estado|status",
+              "statusValue": "={{'Aprobado ' + $('Normalizar Decision').first().json.tipoCompra}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "06b03f17-3d8d-492b-8aea-6e56ae3c6eb3",
+      "name": "Notion: Estado Aprobado",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1264,
+        0
+      ],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Guardo información de la compra').first().json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Estado|status",
+              "statusValue": "Procesado"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "3b6b34e9-855b-4b7c-855f-8c93241ab5a9",
+      "name": "Notion: Estado Procesado",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1488,
+        0
+      ],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Guardo información de la compra').first().json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Estado|status",
+              "statusValue": "={{ $('Normalizar Decision').first().json.tipoCompra.toLowerCase().includes('mayor') ? 'Rechazado Mayorista' : 'Rechazado Minorista' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ae48838c-9e0f-4eaa-9a00-947981eaefe6",
+      "name": "Notion: Rechazado -> Analisis",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        1264,
+        192
+      ],
+      "retryOnFail": true,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "operation": "update",
+        "pageId": {
+          "__rl": true,
+          "value": "={{ $('Guardo información de la compra').first().json.id }}",
+          "mode": "id"
+        },
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Estado|status",
+              "statusValue": "Analisis"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "40ce1f5f-bd0c-4664-92bc-35e89c88db4f",
+      "name": "Notion: Estado Analisis",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        256,
+        352
+      ],
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "model": "inclusionai/ling-3.0-flash-fin:free",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
+      "typeVersion": 1,
+      "position": [
+        -912,
+        416
+      ],
+      "id": "e96c7de6-5f9b-4c9f-a75a-1a4f06569620",
+      "name": "OpenRouter Chat Model",
+      "credentials": {
+        "openRouterApi": {
+          "id": "r9Qe1PB51puYRP3w",
+          "name": "OpenRouter account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "67e6f708-b195-4d9b-ba1e-3df6e92a6208",
+              "name": "canalSlack",
+              "value": "minorista",
+              "type": "string"
+            },
+            {
+              "id": "1dace13e-0445-4171-a3ee-495c258007a5",
+              "name": "estadoPendiente",
+              "value": "Minorista",
+              "type": "string"
+            },
+            {
+              "id": "a0c2da78-007a-45cd-b1bb-c581a67ac615",
+              "name": "estadoAprobado",
+              "value": "Aprobado Minorista",
+              "type": "string"
+            },
+            {
+              "id": "66db8b08-5338-4ec6-9404-fce9dcf20ba1",
+              "name": "Name:pageid",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        192,
+        144
+      ],
+      "id": "1580f346-3c5b-4e8f-b5fa-c960efdc3e31",
+      "name": "Config Minorista"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "from:anaduran78@gmail.com subject:Pedido",
+          "readStatus": "unread"
+        },
+        "options": {}
+      },
+      "id": "4cfbb756-bee4-4cad-8299-ad7fd6b2942c",
+      "name": "Trigger: Leo Mails con Pedidos",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1776,
+        192
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CkJvkOvZlxwn62iB",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "resource": "databasePage",
+        "dataSourceId": {
+          "__rl": true,
+          "value": "cfc6ee5b-e331-46d2-a431-58474851c7f7",
+          "mode": "list",
+          "cachedResultName": "Compras",
+          "cachedResultUrl": "https://app.notion.com/p/63d576e29d8f4dafa803f528e280e041"
+        },
+        "title": "={{ $json.cliente }}",
+        "propertiesUi": {
+          "propertyValues": [
+            {
+              "key": "Descripción de la compra|rich_text",
+              "textContent": "={{ $json.descripcionCompra }}"
+            },
+            {
+              "key": "Estado|status",
+              "statusValue": "Procesado por IA"
+            },
+            {
+              "key": "Mail|email",
+              "emailValue": "={{ $json.mail }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 3,
+      "position": [
+        -304,
+        128
+      ],
+      "id": "4a55f9f3-81c7-414b-b3e3-d0c0699997af",
+      "name": "Guardo información de la compra",
+      "retryOnFail": true,
+      "credentials": {
+        "notionOAuth2Api": {
+          "id": "jmBq0fSLcM7s7vtg",
+          "name": "Notion account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Normalizar Decision').item.json.mail }}",
+        "subject": "=[AUTO] Estamos procesando tu pedido - {{ $('Normalizar Decision').item.json.asunto }}",
+        "message": "=<p>Hola {{ $('Normalizar Decision').item.json.cliente }},</p><p>Recibimos tu pedido y ya lo estamos procesando. Te avisamos apenas quede confirmado.</p><p><b>Detalle recibido:</b><br>{{ $('Normalizar Decision').item.json.descripcionCompra }}</p><p>Referencia: {{ $execution.id }}<br>Fecha: {{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('dd/MM/yyyy HH:mm') }}</p><p>Gracias!</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "41d50c32-2877-432c-8828-a58658bd8121",
+      "name": "Gmail: Aviso al Cliente que recibi el pedido",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        416,
+        64
+      ],
+      "webhookId": "19918ccf-4982-4ef8-bda0-f3eb60bfb84a",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CkJvkOvZlxwn62iB",
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "oAuth2",
+        "operation": "sendAndWait",
+        "select": "channel",
+        "channelId": {
+          "__rl": true,
+          "value": "={{ $('Config Mayorista').isExecuted ? $('Config Mayorista').item.json.canalSlack : $('Config Minorista').item.json.canalSlack }}",
+          "mode": "name"
+        },
+        "message": "=*Nuevo pedido para aprobar*\n• Cliente: {{ $('Normalizar Decision').item.json.cliente }}\n• Mail: {{ $('Normalizar Decision').item.json.mail }}\n• Tipo detectado por IA: *{{ $('Normalizar Decision').item.json.tipoCompra }}*\n• Total de articulos: {{ $('Normalizar Decision').item.json.totalArticulos }}\n• Detalle: {{ $('Normalizar Decision').item.json.descripcionCompra }}\n• Motivo IA: {{ $('Normalizar Decision').item.json.motivo }}\n• Ejecucion: {{ $execution.id }} | {{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('dd/MM/yyyy HH:mm') }}\n\nConfirmas la recepcion del pedido?",
+        "approvalOptions": {
+          "values": {
+            "approvalType": "double",
+            "approveLabel": "Pedido recibido",
+            "disapproveLabel": "Rechazar",
+            "buttonDisapprovalStyle": "danger"
+          }
+        },
+        "options": {}
+      },
+      "id": "ce5e2f53-c1ec-4cef-addf-4c0c70faa722",
+      "name": "Slack-HITL: Aprobación / Rechazo (Wait for Response)",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2.3,
+      "position": [
+        816,
+        96
+      ],
+      "webhookId": "REEMPLAZAR_WEBHOOK_ID",
+      "credentials": {
+        "slackOAuth2Api": {
+          "id": "sgWJfjqNC5X8sSDX",
+          "name": "Slack account 4"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=CONTEXTO DE EJECUCION\nFecha y hora actual: {{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('dd/MM/yyyy HH:mm') }}\nWorkflow: {{ $workflow.name }} (id {{ $workflow.id }}) | Ejecucion: {{ $execution.id }}\nCatalogo completo cargado: {{ $json.catalogoCompleto }}\n\nLISTA DE ARTICULOS Y UNIDADES POR CAJA (fuente Notion, unica valida)\n{{ $ ('Preparar Catalogo').first().json.catalogoTexto }}\n\nPEDIDO RECIBIDO\nNombre del Cliente: {{ $json.pedido.fromName }}\nRemitente: {{ $json.pedido.fromMail }}\nAsunto: {{ $json.pedido.subject }}\nMessage ID: {{ $json.pedido.messageId }}\nFecha de recepcion: {{ $json.pedido.recibidoEn }}\nCuerpo del mail:\n\"\"\"\n{{ $json.pedido.body }}\n\"\"\"\n\nTAREA\nAnaliza el pedido contra la lista de articulos y devolve la clasificacion en el formato JSON solicitado.",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "=  Sos una especialista en ventas que detectara según la cantidad pedida de artículos que tipo de compra es.\n  \n  REGLAS DE DECISION (aplicar en este orden):\n  1. Si el cliente quiere comprar menos de 10 artículos, siempre será una compra MINORISTA sin importar la cantidad que pida.\n  2. Si el cliente quiere comprar mas de 10 artículos, pero de todos pide menos de 100 unidades, será compra MINORISTA.\n  3. Si el cliente quiere comprar mas de 10 artículos, todos de al menos 100 unidades, será compra MAYORISTA.\n  4. Excepcionalmente, cuando un cliente requiera comprar \"Articulo Especial\", siempre será compra MAYORISTA.\n  5. No tomes decisiones si no tenes la información completa. Si tenes dudas no derives la compra, déjala en ANALISIS.\n  \n  DEFINICIONES\n  - Una unidad de un producto (por ejemplo \"Bolígrafo trazo medio azul\" será un articulo.\n  - Si un articulo del pedido no figura en la lista de artículos, el tipo de compra es ANALISIS.\n  - Si no podes determinar cantidades exactas del mail, el tipo de compra es ANALISIS.\n  - Si el catalogo cargado esta vacío o incompleto, el tipo de compra es ANALISIS.\n  \n  SALIDA\n  - Respondes SOLO con el JSON del formato definido, sin texto adicional ni markdown.\n  - Todas las cantidades deben ser numeros, nunca texto.\n  - tipo_compra solo puede ser: \"Mayorista\", \"Minorista\" o \"análisis\" ."
+        }
+      },
+      "id": "4e8cbf68-e7d2-4673-b552-9491de5527bb",
+      "name": "Tomo Decisión",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -880,
+        192
+      ],
+      "retryOnFail": true,
+      "notesInFlow": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "sendTo": "anaduran78@gmail.com",
+        "subject": "Tomo Decisión - Error",
+        "message": "=  {{ $json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -512,
+        304
+      ],
+      "id": "1fb08f55-baa4-4321-a6c3-b692840104ac",
+      "name": "Send a message - Error Toma decisión",
+      "webhookId": "25fb9c52-e63e-4b3b-bcb7-cf968c26de60",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CkJvkOvZlxwn62iB",
+          "name": "Gmail account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "anaduran78@gmail.com",
+        "subject": "Guardar Pedido - Error",
+        "message": "=  {{ $json.id }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -96,
+        352
+      ],
+      "id": "7d02994e-f37e-4df8-9b8d-91e62dcae425",
+      "name": "Send a message - Error Guardar info. compra",
+      "webhookId": "25fb9c52-e63e-4b3b-bcb7-cf968c26de60",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CkJvkOvZlxwn62iB",
+          "name": "Gmail account 2"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Filtro Anti-Bucle": {
+      "main": [
+        [
+          {
+            "node": "Leer Lista de Articulos (Notion)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Leer Lista de Articulos (Notion)": {
+      "main": [
+        [
+          {
+            "node": "Preparar Catalogo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar Catalogo": {
+      "main": [
+        [
+          {
+            "node": "Tomo Decisión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Formato de Salida": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Tomo Decisión",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalizar Decision": {
+      "main": [
+        [
+          {
+            "node": "Guardo información de la compra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enrutar Tipo de Compra": {
+      "main": [
+        [
+          {
+            "node": "Config Mayorista",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Config Minorista",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notion: Estado Analisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Mayorista": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Aviso al Cliente que recibi el pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: Estado Pendiente Aprobacion": {
+      "main": [
+        [
+          {
+            "node": "Slack-HITL: Aprobación / Rechazo (Wait for Response)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aprobado en Slack?": {
+      "main": [
+        [
+          {
+            "node": "Notion: Estado Aprobado",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notion: Rechazado -> Analisis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: Estado Aprobado": {
+      "main": [
+        [
+          {
+            "node": "Notion: Estado Procesado",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notion: Estado Procesado": {
+      "main": [
+        []
+      ]
+    },
+    "OpenRouter Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Tomo Decisión",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config Minorista": {
+      "main": [
+        [
+          {
+            "node": "Gmail: Aviso al Cliente que recibi el pedido",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger: Leo Mails con Pedidos": {
+      "main": [
+        [
+          {
+            "node": "Filtro Anti-Bucle",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guardo información de la compra": {
+      "main": [
+        [
+          {
+            "node": "Enrutar Tipo de Compra",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message - Error Guardar info. compra",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gmail: Aviso al Cliente que recibi el pedido": {
+      "main": [
+        [
+          {
+            "node": "Notion: Estado Pendiente Aprobacion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Slack-HITL: Aprobación / Rechazo (Wait for Response)": {
+      "main": [
+        [
+          {
+            "node": "Aprobado en Slack?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tomo Decisión": {
+      "main": [
+        [
+          {
+            "node": "Normalizar Decision",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send a message - Error Toma decisión",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "fd983508-7d95-4f42-a021-9fbd23138625",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "0628ffaf1f902d427eb433e17c34e89b42a0134861e39fb4d320c367a9a6e9d2"
+  },
+  "nodeGroups": [],
+  "id": "HMxBtPq9OdgcyLxy",
+  "tags": []
+}
