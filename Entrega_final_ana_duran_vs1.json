@@ -10,7 +10,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1552,
+        -1472,
         192
       ]
     },
@@ -35,7 +35,7 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        -1328,
+        -1248,
         192
       ],
       "alwaysOutputData": true,
@@ -57,7 +57,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -1104,
+        -1024,
         192
       ]
     },
@@ -71,8 +71,8 @@
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.2,
       "position": [
-        -720,
-        448
+        -664,
+        408
       ]
     },
     {
@@ -84,8 +84,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        -544,
-        48
+        -448,
+        0
       ]
     },
     {
@@ -152,8 +152,8 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        -96,
-        64
+        0,
+        -224
       ],
       "retryOnFail": true
     },
@@ -194,8 +194,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        160,
-        -48
+        224,
+        -304
       ]
     },
     {
@@ -223,8 +223,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        608,
-        80
+        672,
+        -208
       ],
       "credentials": {
         "notionOAuth2Api": {
@@ -263,8 +263,8 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.2,
       "position": [
-        1040,
-        96
+        1120,
+        -208
       ]
     },
     {
@@ -292,8 +292,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        1264,
-        0
+        1344,
+        -112
       ],
       "credentials": {
         "notionOAuth2Api": {
@@ -327,8 +327,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        1488,
-        0
+        1568,
+        -112
       ],
       "credentials": {
         "notionOAuth2Api": {
@@ -362,8 +362,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        1264,
-        192
+        1344,
+        80
       ],
       "retryOnFail": true,
       "credentials": {
@@ -398,8 +398,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 2.2,
       "position": [
-        256,
-        352
+        304,
+        80
       ],
       "credentials": {
         "notionOAuth2Api": {
@@ -416,8 +416,8 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenRouter",
       "typeVersion": 1,
       "position": [
-        -912,
-        416
+        -792,
+        408
       ],
       "id": "e96c7de6-5f9b-4c9f-a75a-1a4f06569620",
       "name": "OpenRouter Chat Model",
@@ -463,8 +463,8 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.5,
       "position": [
-        192,
-        144
+        224,
+        -112
       ],
       "id": "1580f346-3c5b-4e8f-b5fa-c960efdc3e31",
       "name": "Config Minorista"
@@ -490,7 +490,7 @@
       "type": "n8n-nodes-base.gmailTrigger",
       "typeVersion": 1.2,
       "position": [
-        -1776,
+        -1696,
         192
       ],
       "credentials": {
@@ -533,8 +533,8 @@
       "type": "n8n-nodes-base.notion",
       "typeVersion": 3,
       "position": [
-        -304,
-        128
+        -224,
+        0
       ],
       "id": "4a55f9f3-81c7-414b-b3e3-d0c0699997af",
       "name": "Guardo información de la compra",
@@ -550,7 +550,7 @@
     {
       "parameters": {
         "sendTo": "={{ $('Normalizar Decision').item.json.mail }}",
-        "subject": "=[AUTO] Estamos procesando tu pedido - {{ $('Normalizar Decision').item.json.asunto }}",
+        "subject": "=[AUTO] Estamos procesando tu {{ $('Normalizar Decision').item.json.asunto }}",
         "message": "=<p>Hola {{ $('Normalizar Decision').item.json.cliente }},</p><p>Recibimos tu pedido y ya lo estamos procesando. Te avisamos apenas quede confirmado.</p><p><b>Detalle recibido:</b><br>{{ $('Normalizar Decision').item.json.descripcionCompra }}</p><p>Referencia: {{ $execution.id }}<br>Fecha: {{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('dd/MM/yyyy HH:mm') }}</p><p>Gracias!</p>",
         "options": {
           "appendAttribution": false
@@ -561,8 +561,8 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.1,
       "position": [
-        416,
-        64
+        448,
+        -208
       ],
       "webhookId": "19918ccf-4982-4ef8-bda0-f3eb60bfb84a",
       "retryOnFail": true,
@@ -600,8 +600,8 @@
       "type": "n8n-nodes-base.slack",
       "typeVersion": 2.3,
       "position": [
-        816,
-        96
+        896,
+        -208
       ],
       "webhookId": "REEMPLAZAR_WEBHOOK_ID",
       "credentials": {
@@ -625,7 +625,7 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        -880,
+        -800,
         192
       ],
       "retryOnFail": true,
@@ -642,8 +642,8 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        -512,
-        304
+        -448,
+        192
       ],
       "id": "1fb08f55-baa4-4321-a6c3-b692840104ac",
       "name": "Send a message - Error Toma decisión",
@@ -665,8 +665,8 @@
       "type": "n8n-nodes-base.gmail",
       "typeVersion": 2.2,
       "position": [
-        -96,
-        352
+        0,
+        0
       ],
       "id": "7d02994e-f37e-4df8-9b8d-91e62dcae425",
       "name": "Send a message - Error Guardar info. compra",
@@ -677,6 +677,33 @@
           "name": "Gmail account 2"
         }
       }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Normalizar Decision').item.json.mail }}",
+        "subject": "=[AUTO] Fue procesado tu {{ $('Normalizar Decision').item.json.asunto }}",
+        "message": "=<p>Hola {{ $('Normalizar Decision').item.json.cliente }},</p><p>Tu pedido fue aprobado.</p><p><b>Detalle recibido:</b><br>{{ $('Normalizar Decision').item.json.descripcionCompra }}</p><p>Referencia: {{ $execution.id }}<br>Fecha: {{ $now.setZone('America/Argentina/Buenos_Aires').toFormat('dd/MM/yyyy HH:mm') }}</p><p>Gracias!</p>",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "cbd7bdd5-c1ff-4159-83b9-bcec0bc59cef",
+      "name": "Gmail: Aviso al Cliente / Pedido aprobado",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1344,
+        -336
+      ],
+      "webhookId": "19918ccf-4982-4ef8-bda0-f3eb60bfb84a",
+      "retryOnFail": true,
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "CkJvkOvZlxwn62iB",
+          "name": "Gmail account 2"
+        }
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "pinData": {},
@@ -788,6 +815,11 @@
         [
           {
             "node": "Notion: Estado Aprobado",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail: Aviso al Cliente / Pedido aprobado",
             "type": "main",
             "index": 0
           }
@@ -914,7 +946,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "fd983508-7d95-4f42-a021-9fbd23138625",
+  "versionId": "9b3ca540-fc7b-43ce-adbd-8f8a94701174",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "0628ffaf1f902d427eb433e17c34e89b42a0134861e39fb4d320c367a9a6e9d2"
